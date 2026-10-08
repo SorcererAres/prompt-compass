@@ -14,7 +14,7 @@ By default the suggestions appear in Claude Code's built-in question dialog, eac
 
 When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once. If its dialog is answered only after a new turn has already started (for example because it was queued behind another dialog), the answer is stale and is ignored.
 
-How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
+How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Suggestions are written in your voice and may be sent as your own words, so each one must be a request for Claude to do something: the plugin tells the model never to claim things on your behalf ("I restarted it", "the tests passed"), and drops any suggestion that still does. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
 
 ### What it runs, sends and changes
 
@@ -118,6 +118,7 @@ next:
 - 按钮行模式：`ui.render`（`AbovePrompt`）按 `e.surface` 分支绘制：终端为纯文本热键行，桌面为原生按钮列表；选中时调用 `$.prompt.fill`，第一条建议同时交给 `$.prompt.suggest`。
 - `prompt.submit` / `turn.start`：记下每个回合是不是由你发的消息开启的（按提示来源区分：`composer`、`bridge` 算你的，后台通知、定时任务等不算）；新一轮开始时隐藏建议。
 - 弹窗前用 `$.prompt.read` 看一眼输入框，你正在打字就不弹。
+- 建议以你的口吻写成，可能被当作你本人的话直接发送，所以每条只能是「要 Claude 做什么」的请求：生成时要求模型不得替你声称做过、看到过或确认过什么（如「我重启了」「测试通过了」），模型仍这样写的建议会被丢弃。这道过滤按常见说法匹配，无法覆盖所有措辞。
 - 模型输出视为不可信文本：显示前会清除终端转义序列、控制字符、不可见字符等。
 
 按钮行模式依赖输入框上方的区域，VS Code 扩展与手机 App 目前没有这块区域，因此不显示。
@@ -151,7 +152,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重；弹窗选项的描述为完整提示、其他来源的弹窗不被改动；autoSubmit 打开时直接按本人的话发送、关闭时只写草稿；何时弹窗：只在你发起的回合之后，自动开启的回合、子代理回合、正在打字、弹窗已开、同一回合重复时都不弹；界面语言：默认英文、zh 中文、auto 按最近一条消息判断（含中英混合消息）、非法值回退英文，弹窗与按钮行在两种语言下的全部文字。
+测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重；弹窗选项的描述为完整提示、其他来源的弹窗不被改动；autoSubmit 打开时直接按本人的话发送、关闭时只写草稿；何时弹窗：只在你发起的回合之后，自动开启的回合、子代理回合、正在打字、弹窗已开、同一回合重复时都不弹；界面语言：默认英文、zh 中文、auto 按最近一条消息判断（含中英混合消息）、非法值回退英文，弹窗与按钮行在两种语言下的全部文字；建议不得替你声称：生成提示词的要求，以及中英文各类「我重启了 / 测试通过了 / I already tested it」被丢弃、正常请求保留。
 
 ## 许可
 

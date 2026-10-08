@@ -1,6 +1,6 @@
 {
   "name": "prompt-compass",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "每轮结束后给出最多三条下一步建议：默认用 Claude Code 自带的问答弹窗，也可改为输入框上方的按钮行；终端与桌面 App 均可用。",
   "author": {
     "name": "SorcererAres"

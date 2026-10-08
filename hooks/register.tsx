@@ -95,6 +95,11 @@ function forkPrompt(skills: string): string {
     'this conversation: name the file, test, PR, or follow-up they would actually type). Prefer the ' +
     'obvious next action (run the tests, commit, fix the thing you flagged, do the same for X) over generic ' +
     'ones. If the conversation is clearly finished or nothing useful comes to mind, return an empty list.\n\n' +
+    'Each prompt must be a request for Claude to do something. Never state or imply what the user has done, ' +
+    'seen, tested or decided (no "I restarted it", "I already tested it", "the tests passed", "it works now"): ' +
+    'you cannot know any of that, and the prompt may be sent as the user\'s own words. If the next step ' +
+    'depends on something only the user can do or check, phrase it as a request ("after a restart, check ' +
+    'which version is loaded"), not as a report that it happened.\n\n' +
     (skills === ''
       ? ''
       : 'The user runs a skill or slash command by starting a prompt with its name. When one of them is ' +
@@ -106,6 +111,20 @@ function forkPrompt(skills: string): string {
     'Answer with ONLY a JSON array, no prose, no code fence: ' +
     `[{"label": "<≤${LABEL_MAX} chars shown on a button>", "prompt": "<full prompt text>"}]`
   )
+}
+
+// 建议以本人口吻写成，可能被当作本人的话直接发送。模型若仍替本人声称做过、
+// 看到过或确认过什么（「我重启了」「测试通过了」「I already tested it」），丢掉这条：
+// 本人没说过的事不能借本人之口说出。只拦陈述已完成之事的写法，请求与指令照常保留。
+const CLAIMS = [
+  /我(?:已经|刚刚|刚才|刚|也|都)?(?:重启|测试|测|试|跑|运行|检查|确认|安装|装|更新|修改|改|提交|推|删除|删|关闭|关|打开|看)(?:过|好|完)?(?:了|过)/,
+  /(?:测试|实测|验证)(?:已经|都|全部|也)?通过了/,
+  /\bI(?:'ve| have)?(?: just| already)? (?:restarted|tested|ran|checked|confirmed|installed|updated|tried|verified|reloaded|pushed|deleted|fixed|changed|edited)\b/i,
+  /(?:^|[,.;!?]\s*)(?:all )?(?:the )?tests? (?:have |all )?passed\b/i,
+]
+
+function claimsOnUsersBehalf(prompt: string): boolean {
+  return CLAIMS.some(pattern => pattern.test(prompt))
 }
 
 // A prompt that starts with a slash runs a command, so one naming a command
@@ -133,7 +152,7 @@ function parseSuggestions(reply: string, known: ReadonlySet<string> | null): Sug
     const prompt = (entry as { prompt?: unknown }).prompt
     if (typeof prompt !== 'string') continue
     const filled = clean(prompt, PROMPT_MAX)
-    if (filled === '' || !namesKnownCommand(filled, known)) continue
+    if (filled === '' || !namesKnownCommand(filled, known) || claimsOnUsersBehalf(filled)) continue
     const named = typeof label === 'string' ? clean(label, LABEL_MAX) : ''
     items.push({ label: named === '' ? clean(filled, LABEL_MAX) : named, prompt: filled })
     if (items.length === MAX_SUGGESTIONS) break
