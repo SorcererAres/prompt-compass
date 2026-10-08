@@ -1,6 +1,8 @@
 # next-steps-app
 
-每轮对话结束后，在输入框上方给出最多三条「下一步」建议。**终端和 Claude 桌面 App 的 Code tab 都能用。**
+每轮对话结束后给出最多三条「下一步」建议。**终端和 Claude 桌面 App 的 Code tab 都能用。**
+
+默认用 Claude Code 自带的问答弹窗（与 Claude 向你提问时的选择框相同）；也可以改为输入框上方的一行按钮。
 
 基于 [anthropics/claude-plugins-community](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps) 中 Thariq Shihipar 的 `next-steps` 插件改写。原版只在终端绘制，本版本按界面分支渲染，让桌面 App 也能显示。
 
@@ -33,7 +35,18 @@ claude plugin disable next-steps@claude-community
 
 ## 效果
 
-**桌面 App（Code tab）**：输入框上方出现一行「下一步：」，后面是可点击的原生按钮，第一条为主按钮；右侧是桌面自带的关闭控件。
+### 弹窗模式（默认，`display: dialog`）
+
+回答结束后弹出「下一步」问答框：
+
+- 列出最多三条建议，外加「暂不需要」；弹窗自带的「Other」可以自己输入。
+- 选中一条：它的完整提示作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
+- 在「Other」里输入的文字同样写入输入框；选「暂不需要」或关闭弹窗则什么都不做。
+- 注意：弹窗会占用键盘直到你作答或关闭；嫌打扰可以改用按钮行，或调高 `minAnswerChars`。
+
+### 按钮行模式（`display: band`）
+
+**桌面 App（Code tab）**：输入框上方出现「下一步」标题行（右侧为关闭），下面每条建议一行，第一条为主按钮，右侧角标是数字热键。
 
 **终端**：与原版一致：
 
@@ -45,10 +58,10 @@ next:
   0: dismiss
 ```
 
-- 点击建议（或在空输入框 / 聚焦建议栏时按 `1`、`2`、`3`），该建议会作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
-- `0` 或关闭按钮：收起建议。
+- 点击建议（或按 `1`、`2`、`3`），该建议作为草稿写入输入框；`0` 或关闭按钮收起建议。
 - 第一条建议同时作为输入框的灰色提示，按 `Tab` 直接采用。
-- **插件从不自动发送任何提示。**
+
+**两种模式都不会自动发送任何提示。**
 
 ## 工作原理
 
@@ -56,17 +69,18 @@ next:
 
 - `turn.complete`：用 `$.model.fork` 分叉当前会话，请模型预测接下来最可能的提示。分叉共享会话的提示缓存，成本约等于一条简短回复。
 - `$.command.list`：把会话中可用的 skill 与斜杠命令交给分叉，所以建议可以是 `/skill 参数`；不存在的命令会被丢弃。
-- `ui.render`（`AbovePrompt`）：按 `e.surface` 分支绘制：终端为纯文本热键行，桌面为原生按钮行。
-- 选中时调用 `$.prompt.fill`；第一条建议同时交给 `$.prompt.suggest`。
+- 弹窗模式：`$.ui.ask` 打开引擎自带的 AskUserQuestion 弹窗，选中后调用 `$.prompt.fill`。
+- 按钮行模式：`ui.render`（`AbovePrompt`）按 `e.surface` 分支绘制：终端为纯文本热键行，桌面为原生按钮列表；选中时调用 `$.prompt.fill`，第一条建议同时交给 `$.prompt.suggest`。
 - `turn.start`：新一轮开始时隐藏建议。
 - 模型输出视为不可信文本：显示前会清除终端转义序列、控制字符、不可见字符等。
 
-VS Code 扩展与手机 App 目前不提供输入框上方的区域，因此不显示建议。
+按钮行模式依赖输入框上方的区域，VS Code 扩展与手机 App 目前没有这块区域，因此不显示。
 
 ## 选项
 
 | 选项 | 默认值 | 作用 |
 | --- | --- | --- |
+| `display` | `dialog` | `dialog`：问答弹窗；`band`：输入框上方的按钮行 |
 | `minAnswerChars` | `80` | 回答短于该字符数时不给建议 |
 | `suggestSkills` | `true` | 是否把会话可用的 skill 与斜杠命令告诉建议生成器 |
 
@@ -82,7 +96,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-测试覆盖终端与桌面两种界面：显示建议、点击填入输入框、点击后收起。
+测试覆盖：按钮行模式在终端与桌面两种界面显示建议、点击填入输入框、点击后收起；弹窗模式列出选项、选中后填入输入框、选「暂不需要」不做任何事。
 
 ## 许可
 

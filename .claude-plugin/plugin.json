@@ -1,7 +1,7 @@
 {
   "name": "next-steps-app",
-  "version": "0.1.0",
-  "description": "next-steps 的桌面 App 适配版：每轮结束后在输入框上方给出最多三条下一步建议，终端与桌面 App Code tab 均可用。",
+  "version": "0.2.0",
+  "description": "每轮结束后给出最多三条下一步建议：默认用 Claude Code 自带的问答弹窗，也可改为输入框上方的按钮行；终端与桌面 App 均可用。",
   "author": {
     "name": "SorcererAres"
   },
@@ -17,6 +17,17 @@
     "desktop"
   ],
   "userConfig": {
+    "display": {
+      "type": "string",
+      "title": "How to show suggestions",
+      "description": "dialog: the built-in question dialog; band: a row above the prompt box.",
+      "required": false,
+      "options": [
+        "dialog",
+        "band"
+      ],
+      "default": "dialog"
+    },
     "minAnswerChars": {
       "type": "number",
       "title": "Shortest answer to suggest after",

@@ -149,9 +149,35 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
+const DIALOG_DISMISS = '暂不需要'
+
+// 用引擎自带的 AskUserQuestion 弹窗列出建议：选中一条，把它的完整提示写进输入框
+// 作为草稿；在「Other」里输入的文字同样写进输入框；关闭弹窗或选「暂不需要」则什么都不做。
+// 弹窗的选项只是标签，所以标签去重后再映射回完整提示。
+async function askInDialog($: EngineInterface, items: readonly Suggestion[]): Promise<void> {
+  const byLabel = new Map<string, string>()
+  for (const item of items) {
+    if (item.label !== DIALOG_DISMISS && !byLabel.has(item.label)) byLabel.set(item.label, item.prompt)
+  }
+  if (byLabel.size === 0) return
+  let answer: string
+  try {
+    answer = await $.ui.ask('接下来做什么？', { header: '下一步', options: [...byLabel.keys(), DIALOG_DISMISS] })
+  } catch {
+    return // 弹窗被关闭，或无人可问
+  }
+  if (answer === DIALOG_DISMISS) return
+  const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
+  if (text === '') return
+  const r = await $.prompt.fill({ text }).catch(() => ({ isFilled: false }))
+  if (!r.isFilled) $.ui.toast('could not fill the prompt box')
+}
+
 export const register: Register = (on, options) => {
   const minTurnChars = typeof options?.minAnswerChars === 'number' ? options.minAnswerChars : 80
   const suggestsSkills = options?.suggestSkills !== false
+  // dialog：用引擎自带的 AskUserQuestion 弹窗；band：画在输入框上方
+  const usesDialog = options?.display !== 'band'
 
   // A new turn (typed or otherwise) hides whatever was offered.
   on('turn.start', async ($, e, next) => {
@@ -179,6 +205,11 @@ export const register: Register = (on, options) => {
       }
       // A newer turn started (or another completed) while we waited: drop ours.
       if (view.kind !== 'loading' || view.turnId !== turnId) return
+      if (usesDialog) {
+        show($, { kind: 'hidden' })
+        if (items.length > 0) void askInDialog($, items)
+        return
+      }
       show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
       if (items[0] !== undefined) void $.prompt.suggest({ text: items[0].prompt }).catch(() => undefined)
     })()
@@ -198,7 +229,7 @@ export const register: Register = (on, options) => {
       return (
         <Box flexDirection="column">
           {below}
-          <Box marginTop={isTerminal ? 1 : 0}>
+          <Box marginTop={isTerminal || below !== null ? 1 : 0}>
             <Text dimColor>{isTerminal ? 'next steps…' : '正在生成下一步建议…'}</Text>
           </Box>
         </Box>
@@ -233,21 +264,27 @@ export const register: Register = (on, options) => {
       )
     }
 
+    // 桌面：与上方其他插件的内容留出间距；标题行左侧「下一步」、右侧关闭，
+    // 建议纵向逐条排列。序号由桌面自带的热键角标显示，标签里不再重复。
     return (
       <Box flexDirection="column">
         {below}
-        <Box flexDirection="row" flexWrap="wrap" alignItems="center" gap={1}>
-          <Text dimColor>下一步：</Text>
+        <Box flexDirection="column" marginTop={below === null ? 0 : 1} rowGap={1}>
+          <Box flexDirection="row" justifyContent="space-between" alignItems="center">
+            <Text dimColor>下一步</Text>
+            <Button key="dismiss" hotkey="0" role="dismiss" dimColor label="关闭" onPress={dismiss} />
+          </Box>
           {items.map((item, index) => (
-            <Button
-              key={`s${index}`}
-              hotkey={String(index + 1)}
-              variant={index === 0 ? 'primary' : 'secondary'}
-              label={`${index + 1}. ${item.label}`}
-              onPress={take(item)}
-            />
+            <Box key={`row${index}`} flexDirection="row">
+              <Button
+                key={`s${index}`}
+                hotkey={String(index + 1)}
+                variant={index === 0 ? 'primary' : 'secondary'}
+                label={item.label}
+                onPress={take(item)}
+              />
+            </Box>
           ))}
-          <Button key="dismiss" hotkey="0" role="dismiss" label="关闭建议" onPress={dismiss} />
         </Box>
       </Box>
     )
