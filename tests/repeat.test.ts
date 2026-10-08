@@ -1,5 +1,6 @@
 // 重复弹窗：子代理回合、弹窗未关时又有回合结束、同一回合重复触发。
 import { expect, test } from 'claude-code/testing'
+import { finishTurn, stubTurns } from './turns'
 import type { On } from 'claude-code'
 
 const REPLY = JSON.stringify([{ label: '跑测试', prompt: '运行测试' }])
@@ -10,6 +11,7 @@ function wire(on: On) {
   const opened: string[] = []
   const closers: (() => void)[] = []
   on('turn.complete', () => Promise.resolve({ text: '' }))
+  stubTurns(on)
   on('command.list', () => Promise.resolve({ value: [] } as never))
   on('model.fork', () => Promise.resolve({ value: { isAnswered: true, text: REPLY, usage: {} } } as never))
   on('ui.log', () => Promise.resolve({ value: undefined } as never))
@@ -30,16 +32,16 @@ const turn = (turnId: string, agentId?: string) =>
 
 test('子代理的回合结束：不弹窗', async ($, on) => {
   const w = wire(on)
-  await $.turn.complete(turn('sub-1', 'agent-1'))
+  await finishTurn($, turn('sub-1', 'agent-1'))
   await settle()
   expect(w.opened.length).toBe(0)
 })
 
 test('弹窗还开着时另一回合结束：不再叠一个弹窗', async ($, on) => {
   const w = wire(on)
-  await $.turn.complete(turn('t1'))
+  await finishTurn($, turn('t1'))
   await settle()
-  await $.turn.complete(turn('t2'))
+  await finishTurn($, turn('t2'))
   await settle()
   expect(w.opened.length).toBe(1)
   w.closeAll()
@@ -48,22 +50,22 @@ test('弹窗还开着时另一回合结束：不再叠一个弹窗', async ($, o
 
 test('同一回合的 turn.complete 到达两次：只弹一次', async ($, on) => {
   const w = wire(on)
-  await $.turn.complete(turn('t1'))
+  await finishTurn($, turn('t1'))
   await settle()
   w.closeAll()
   await settle()
-  await $.turn.complete(turn('t1'))
+  await finishTurn($, turn('t1'))
   await settle()
   expect(w.opened.length).toBe(1)
 })
 
 test('正常情况：每个主回合各弹一次', async ($, on) => {
   const w = wire(on)
-  await $.turn.complete(turn('t1'))
+  await finishTurn($, turn('t1'))
   await settle()
   w.closeAll()
   await settle()
-  await $.turn.complete(turn('t2'))
+  await finishTurn($, turn('t2'))
   await settle()
   expect(w.opened.length).toBe(2)
   w.closeAll()

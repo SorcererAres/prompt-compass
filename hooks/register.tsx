@@ -13,7 +13,7 @@
 // The fork is also handed the session's skills and slash commands
 // ($.command.list), so a suggestion can be "/skill arguments".
 
-import type { CommandInfo, EngineInterface, Register, RenderElement } from 'claude-code'
+import type { CommandInfo, EngineInterface, PromptOrigin, Register, RenderElement } from 'claude-code'
 
 type Suggestion = { label: string; prompt: string }
 
@@ -162,6 +162,20 @@ let pendingDescriptions: ReadonlyMap<string, string> | null = null
 let isDialogOpen = false
 let lastHandledTurnId: string | null = null
 
+// 只在「本人发了一条消息、AI 回答完」之后给建议。后台任务通知、定时任务、
+// 其他会话的消息、自动续跑等也会开启回合，那时 AI 往往还在干活，不该弹窗。
+// prompt.submit 记下最近一条提示是不是本人发的，turn.start 把它记到这个回合上。
+let lastPromptByPerson = false
+let sawPromptSubmit = false
+const personTurns = new Set<string>()
+
+function isPersonOrigin(origin: PromptOrigin | undefined): boolean {
+  if (origin === undefined) return false
+  if (origin.kind === 'composer' || origin.kind === 'bridge') return true
+  // 插件以本人的话发出的提示（比如本插件 autoSubmit 发送的、本人亲手选的那条）
+  return origin.kind === 'plugin' && origin.asUser === true
+}
+
 type AskedQuestion = {
   question: string
   header: string
@@ -236,8 +250,25 @@ export const register: Register = (on, options) => {
   })
 
   // A new turn (typed or otherwise) hides whatever was offered.
+  on('prompt.submit', async ($, e, next) => {
+    const result = await next(e)
+    sawPromptSubmit = true
+    const byPerson = isPersonOrigin(e.origin)
+    // 本人在回合进行中插话：这个回合也算本人的
+    if (e.turnId !== undefined && byPerson) personTurns.add(e.turnId)
+    else lastPromptByPerson = byPerson
+    return result
+  })
+
   on('turn.start', async ($, e, next) => {
     if (view.kind !== 'hidden') show($, { kind: 'hidden' })
+    // 没有输入文字的回合（续跑）不算；宿主若不报 prompt.submit，就退回只看有没有文字
+    const byPerson = e.text !== '' && (sawPromptSubmit ? lastPromptByPerson : true)
+    lastPromptByPerson = false
+    if (byPerson) {
+      personTurns.add(e.turnId)
+      if (personTurns.size > 50) personTurns.delete(personTurns.values().next().value as string)
+    }
     return next(e)
   })
 
@@ -248,6 +279,8 @@ export const register: Register = (on, options) => {
     if (e.agentId !== undefined) return result
     if (e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
     const turnId = e.turnId
+    // 不是本人发起的回合（后台通知、定时任务、自动续跑等）：AI 可能还在干活，不打扰
+    if (!personTurns.has(turnId)) return result
     // 同一回合只处理一次；弹窗还开着时不再为新回合生成建议
     if (turnId === lastHandledTurnId) return result
     if (usesDialog && isDialogOpen) return result
@@ -269,7 +302,11 @@ export const register: Register = (on, options) => {
       if (view.kind !== 'loading' || view.turnId !== turnId) return
       if (usesDialog) {
         show($, { kind: 'hidden' })
-        if (items.length > 0) void askInDialog($, items, autoSubmit)
+        if (items.length === 0) return
+        // 本人已经在输入框里打字了：不弹窗打断
+        const box = await $.prompt.read().catch(() => ({ text: '' }))
+        if (box.text.trim() !== '') return
+        void askInDialog($, items, autoSubmit)
         return
       }
       show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
