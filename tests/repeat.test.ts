@@ -71,3 +71,61 @@ test('正常情况：每个主回合各弹一次', async ($, on) => {
   w.closeAll()
   await settle()
 })
+
+// 弹窗排在别的弹窗后面，等它显示并被作答时已经开始了新一轮：答案过时，不写入也不发送
+for (const autoSubmit of [false, true]) {
+  test(`作答前已开始新一轮：答案作废（autoSubmit=${autoSubmit}）`, { options: { autoSubmit } }, async ($, on) => {
+    const filled: string[] = []
+    const submitted: string[] = []
+    const dialog: { answer?: () => void } = {}
+    on('turn.complete', () => Promise.resolve({ text: '' }))
+    stubTurns(on, { submit: false })
+    on('command.list', () => Promise.resolve({ value: [] } as never))
+    on('model.fork', () => Promise.resolve({ value: { isAnswered: true, text: REPLY, usage: {} } } as never))
+    on('ui.log', () => Promise.resolve({ value: undefined } as never))
+    on('prompt.fill', (_$, e) => {
+      filled.push(e.text)
+      return Promise.resolve({ isFilled: true } as never)
+    })
+    on('prompt.submit', (_$, e) => {
+      submitted.push(e.text)
+      return Promise.resolve({ text: e.text } as never)
+    })
+    on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+      const q = (e as unknown as { questions: { question: string }[] }).questions
+      return new Promise(resolve => {
+        dialog.answer = () => resolve({ result: { questions: q, answers: { [q[0]?.question ?? '']: '跑测试' } } } as never)
+      })
+    })
+
+    await finishTurn($, turn('t1'))
+    await settle()
+    // 弹窗还没作答，新一轮已经开始（比如本人从别的弹窗发出了消息）
+    await $.turn.start({ text: '另一条消息', turnId: 't2' } as never)
+    expect(dialog.answer).toBeDefined()
+    dialog.answer?.()
+    await settle()
+    expect(filled).toEqual([])
+    expect(submitted).toEqual([])
+  })
+}
+
+test('正常作答（期间没有新一轮）：照常写入', async ($, on) => {
+  const filled: string[] = []
+  on('turn.complete', () => Promise.resolve({ text: '' }))
+  stubTurns(on)
+  on('command.list', () => Promise.resolve({ value: [] } as never))
+  on('model.fork', () => Promise.resolve({ value: { isAnswered: true, text: REPLY, usage: {} } } as never))
+  on('ui.log', () => Promise.resolve({ value: undefined } as never))
+  on('prompt.fill', (_$, e) => {
+    filled.push(e.text)
+    return Promise.resolve({ isFilled: true } as never)
+  })
+  on('tool.call', { tool: 'AskUserQuestion' }, (_$, e) => {
+    const q = (e as unknown as { questions: { question: string }[] }).questions
+    return Promise.resolve({ result: { questions: q, answers: { [q[0]?.question ?? '']: '跑测试' } } } as never)
+  })
+  await finishTurn($, turn('t1'))
+  await settle()
+  expect(filled).toEqual(['运行测试'])
+})

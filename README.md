@@ -12,7 +12,7 @@
 
 By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "Not now" or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. The dialog and buttons are in English by default; set `language` to `zh` for Chinese, or `auto` to follow the language of your latest message. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. Nothing is ever sent unless you pick an option yourself with `autoSubmit` turned on.
 
-When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once.
+When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once. If its dialog is answered only after a new turn has already started (for example because it was queued behind another dialog), the answer is stale and is ignored.
 
 How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
 
@@ -64,6 +64,7 @@ claude plugin disable next-steps@claude-community
 - 子代理（如 Explore、Agent）的回合；
 - 你已经在输入框里打字时；
 - 已经有一个建议弹窗开着时（不会叠加），同一回合也只处理一次。
+- 弹窗如果排在别的弹窗后面，等你作答时已经开始了新一轮，这个答案作废：不写入也不发送。
 
 ### 弹窗模式（默认，`display: dialog`）
 

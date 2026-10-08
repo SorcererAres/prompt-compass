@@ -224,6 +224,9 @@ let pendingDialog: PendingDialog | null = null
 // 防止重复弹窗：弹窗开着时不再叠一个；同一回合只处理一次。
 let isDialogOpen = false
 let lastHandledTurnId: string | null = null
+// 已开始的回合数。弹窗可能排在别的弹窗后面，等它被作答时已经开始了新一轮，
+// 那时的答案已经过时，不写入也不发送。
+let turnsStarted = 0
 
 // 只在「本人发了一条消息、AI 回答完」之后给建议。后台任务通知、定时任务、
 // 其他会话的消息、自动续跑等也会开启回合，那时 AI 往往还在干活，不该弹窗。
@@ -263,6 +266,7 @@ async function askInDialog(
   if (isDialogOpen) return
   let answer: string
   const header = autoSubmit ? texts.headerSend : texts.header
+  const turnsBefore = turnsStarted
   isDialogOpen = true
   pendingDialog = {
     question: texts.question,
@@ -278,6 +282,8 @@ async function askInDialog(
     isDialogOpen = false
   }
   if (answer === texts.dismiss) return
+  // 等待作答期间已经开始了新一轮：建议是针对上一轮的，作废
+  if (turnsStarted !== turnsBefore) return
   if (!byLabel.has(answer) && isHostNotice(answer)) return
   const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
   if (text === '') return
@@ -336,6 +342,7 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.start', async ($, e, next) => {
+    turnsStarted += 1
     if (view.kind !== 'hidden') show($, { kind: 'hidden' })
     // 没有输入文字的回合（续跑）不算；宿主若不报 prompt.submit，就退回只看有没有文字
     const byPerson = e.text !== '' && (sawPromptSubmit ? lastPromptByPerson : true)
