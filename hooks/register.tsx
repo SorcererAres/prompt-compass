@@ -154,6 +154,16 @@ const DIALOG_HEADER = '下一步'
 const DIALOG_HEADER_SEND = '下一步·直接发送'
 const DIALOG_DISMISS = '暂不需要'
 
+// 关闭弹窗时，宿主可能不拒绝，而是把一段系统提示当作答案返回，比如
+// 「[User dismissed — do not proceed, wait for next instruction]」。那不是本人写的，
+// 当作 Other 文字写入或发送就成了冒充本人说话，所以识别出来按关闭处理：
+// 整段被方括号包住的，或以「User dismissed / declined / cancelled …」开头的。
+function isHostNotice(answer: string): boolean {
+  const text = answer.trim()
+  if (/^\[[^\]]*\]$/.test(text)) return true
+  return /^(the )?user (dismissed|declined|cancelled|canceled|rejected|interrupted)\b/i.test(text)
+}
+
 // 弹窗正在问的建议：标签到完整提示。$.ui.ask 只收标签，所以由本插件的
 // ui.render（AskUserQuestion）钩子按这张表在绘制时给每个选项补上描述。
 let pendingDescriptions: ReadonlyMap<string, string> | null = null
@@ -208,6 +218,7 @@ async function askInDialog($: EngineInterface, items: readonly Suggestion[], aut
     isDialogOpen = false
   }
   if (answer === DIALOG_DISMISS) return
+  if (!byLabel.has(answer) && isHostNotice(answer)) return
   const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
   if (text === '') return
   if (autoSubmit) {

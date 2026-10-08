@@ -294,3 +294,28 @@ test('其他来源的 AskUserQuestion 弹窗不被改动', async ($, on) => {
     expect(seen.described).toEqual(['', ''])
   }
 })
+
+// 关闭弹窗时，宿主可能不是拒绝，而是把一段系统提示当作「答案」返回；它不是本人写的，不能写入或发送
+for (const notice of [
+  '[User dismissed — do not proceed, wait for next instruction]',
+  '[Request interrupted by user]',
+  'User declined to answer questions',
+]) {
+  for (const autoSubmit of [false, true]) {
+    test(`关闭弹窗返回系统提示「${notice.slice(0, 20)}…」：不写入也不发送（autoSubmit=${autoSubmit}）`, { options: { autoSubmit } }, async ($, on) => {
+      const seen = wire($, on, { reply: json([{ label: '跑测试', prompt: '运行测试' }]), pick: notice })
+      await finishTurn($, turn())
+      await settle()
+      expect(seen.asked).toEqual(['跑测试', '暂不需要'])
+      expect(seen.filled).toEqual([])
+      expect(seen.submitted).toEqual([])
+    })
+  }
+}
+
+test('Other 里正常输入的文字不受影响（含方括号但不是整段包住）', async ($, on) => {
+  const seen = wire($, on, { reply: json([{ label: '跑测试', prompt: '运行测试' }]), pick: '把 [TODO] 都列出来' })
+  await finishTurn($, turn())
+  await settle()
+  expect(seen.filled).toEqual(['把 [TODO] 都列出来'])
+})
