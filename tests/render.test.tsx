@@ -55,7 +55,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
 for (const answer of [
   { pick: '提交代码', filled: ['提交这次改动'] },
-  { pick: '暂不需要', filled: [] },
+  { pick: 'Not now', filled: [] },
 ]) {
   test(`dialog 模式：选「${answer.pick}」`, async ($, on) => {
     const filled: string[] = []
@@ -78,7 +78,7 @@ for (const answer of [
     await finishTurn($, { answer: '这是一段足够长的回答。'.repeat(20), durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
     await settle()
 
-    expect(asked).toEqual(['运行测试', '提交代码', '暂不需要'])
+    expect(asked).toEqual(['运行测试', '提交代码', 'Not now'])
     expect(filled).toEqual(answer.filled)
   })
 }
@@ -106,7 +106,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
         component: 'AbovePrompt',
         props: { hasSurvey: false, isWorking: false, maxRows: 20 } as never,
       })
-      const loading = await ui.find({ type: 'Text', text: /next steps…|正在生成下一步建议/ })
+      const loading = await ui.find({ type: 'Text', text: /next steps…|Generating suggestions…/ })
       if (display === 'dialog') expect(loading).toBeUndefined()
       else expect(loading).toBeDefined()
       await ui.unmount()

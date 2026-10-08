@@ -149,10 +149,61 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
-const DIALOG_QUESTION = '接下来做什么？'
-const DIALOG_HEADER = '下一步'
-const DIALOG_HEADER_SEND = '下一步·直接发送'
-const DIALOG_DISMISS = '暂不需要'
+// 界面文字：language 选项为 en（默认）、zh，或 auto（跟随本人最近一条消息的语言）。
+// 弹窗标题（header）最多 12 个字符。
+type Language = 'en' | 'zh'
+type Texts = {
+  question: string
+  header: string
+  headerSend: string
+  dismiss: string
+  dismissDescription: string
+  bandTitle: string
+  bandClose: string
+  bandLoading: string
+  terminalTitle: string
+  terminalDismiss: string
+  terminalLoading: string
+}
+const TEXTS: Record<Language, Texts> = {
+  en: {
+    question: 'What next?',
+    header: 'Next step',
+    headerSend: 'Next · send',
+    dismiss: 'Not now',
+    dismissDescription: 'Close without doing anything',
+    bandTitle: 'Next',
+    bandClose: 'Close',
+    bandLoading: 'Generating suggestions…',
+    terminalTitle: 'next:',
+    terminalDismiss: 'dismiss',
+    terminalLoading: 'next steps…',
+  },
+  zh: {
+    question: '接下来做什么？',
+    header: '下一步',
+    headerSend: '下一步·直接发送',
+    dismiss: '暂不需要',
+    dismissDescription: '关闭，不做任何事',
+    bandTitle: '下一步',
+    bandClose: '关闭',
+    bandLoading: '正在生成下一步建议…',
+    terminalTitle: '下一步：',
+    terminalDismiss: '关闭',
+    terminalLoading: '正在生成…',
+  },
+}
+
+// auto：看本人最近一条消息里汉字与拉丁字母的比例。中文消息里常夹着英文的
+// 文件名、命令名，所以汉字只要占到拉丁字母的三分之一以上就算中文。
+function detectLanguage(text: string): Language {
+  const han = (text.match(/\p{Script=Han}/gu) ?? []).length
+  const latin = (text.match(/[A-Za-z]/g) ?? []).length
+  return han >= 2 && han * 3 >= latin ? 'zh' : 'en'
+}
+
+// 本人最近一条消息的文字，供 auto 判断语言
+let lastPersonText = ''
 
 // 关闭弹窗时，宿主可能不拒绝，而是把一段系统提示当作答案返回，比如
 // 「[User dismissed — do not proceed, wait for next instruction]」。那不是本人写的，
@@ -164,9 +215,11 @@ function isHostNotice(answer: string): boolean {
   return /^(the )?user (dismissed|declined|cancelled|canceled|rejected|interrupted)\b/i.test(text)
 }
 
-// 弹窗正在问的建议：标签到完整提示。$.ui.ask 只收标签，所以由本插件的
-// ui.render（AskUserQuestion）钩子按这张表在绘制时给每个选项补上描述。
-let pendingDescriptions: ReadonlyMap<string, string> | null = null
+// 弹窗正在问的建议：问题、标题与「标签到完整提示」的表。$.ui.ask 只收标签，
+// 所以由本插件的 ui.render（AskUserQuestion）钩子在绘制时认出自己的弹窗
+// （问题与标题对得上），按这张表给每个选项补上描述。
+type PendingDialog = { question: string; header: string; descriptions: ReadonlyMap<string, string> }
+let pendingDialog: PendingDialog | null = null
 
 // 防止重复弹窗：弹窗开着时不再叠一个；同一回合只处理一次。
 let isDialogOpen = false
@@ -195,29 +248,36 @@ type AskedQuestion = {
 // 用引擎自带的 AskUserQuestion 弹窗列出建议，每个选项的描述是它的完整提示，
 // 所以选之前能看到将要写入或发送的全部文字。选中一条：autoSubmit 关闭时写进输入框
 // 作为草稿，打开时直接发送；在「Other」里输入的文字同样处理；关闭弹窗或选
-// 「暂不需要」则什么都不做。弹窗按标签作答，所以标签去重后再映射回完整提示。
-async function askInDialog($: EngineInterface, items: readonly Suggestion[], autoSubmit: boolean): Promise<void> {
+// 「暂不需要」（Not now）则什么都不做。弹窗按标签作答，所以标签去重后再映射回完整提示。
+async function askInDialog(
+  $: EngineInterface,
+  items: readonly Suggestion[],
+  autoSubmit: boolean,
+  texts: Texts,
+): Promise<void> {
   const byLabel = new Map<string, string>()
   for (const item of items) {
-    if (item.label !== DIALOG_DISMISS && !byLabel.has(item.label)) byLabel.set(item.label, item.prompt)
+    if (item.label !== texts.dismiss && !byLabel.has(item.label)) byLabel.set(item.label, item.prompt)
   }
   if (byLabel.size === 0) return
   if (isDialogOpen) return
   let answer: string
+  const header = autoSubmit ? texts.headerSend : texts.header
   isDialogOpen = true
-  pendingDescriptions = new Map([...byLabel, [DIALOG_DISMISS, '关闭，不做任何事']])
+  pendingDialog = {
+    question: texts.question,
+    header,
+    descriptions: new Map([...byLabel, [texts.dismiss, texts.dismissDescription]]),
+  }
   try {
-    answer = await $.ui.ask(DIALOG_QUESTION, {
-      header: autoSubmit ? DIALOG_HEADER_SEND : DIALOG_HEADER,
-      options: [...byLabel.keys(), DIALOG_DISMISS],
-    })
+    answer = await $.ui.ask(texts.question, { header, options: [...byLabel.keys(), texts.dismiss] })
   } catch {
     return // 弹窗被关闭，或无人可问
   } finally {
-    pendingDescriptions = null
+    pendingDialog = null
     isDialogOpen = false
   }
-  if (answer === DIALOG_DISMISS) return
+  if (answer === texts.dismiss) return
   if (!byLabel.has(answer) && isHostNotice(answer)) return
   const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
   if (text === '') return
@@ -237,25 +297,27 @@ export const register: Register = (on, options) => {
   const usesDialog = options?.display !== 'band'
   // 仅弹窗模式生效：按钮行只显示短标签，看不到完整提示，所以那里始终只写草稿
   const autoSubmit = options?.autoSubmit === true
+  const language = options?.language === 'zh' || options?.language === 'auto' ? options.language : 'en'
+  const texts = (): Texts => TEXTS[language === 'auto' ? detectLanguage(lastPersonText) : language]
 
   // 只改本插件自己的提问：正有一组建议在等待作答、且问题与标题都对得上时，
   // 在绘制弹窗前给每个选项补上描述（完整提示）。这只改变显示，作答仍按标签；
   // 模型自己的 AskUserQuestion 弹窗原样放行。
   on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next): Promise<RenderElement> => {
-    const descriptions = pendingDescriptions
+    const pending = pendingDialog
     const [first, ...rest] = e.props.questions as AskedQuestion[]
     if (
-      descriptions === null ||
+      pending === null ||
       first === undefined ||
       rest.length > 0 ||
-      first.question !== DIALOG_QUESTION ||
-      (first.header !== DIALOG_HEADER && first.header !== DIALOG_HEADER_SEND)
+      first.question !== pending.question ||
+      first.header !== pending.header
     ) {
       return next(e)
     }
     const options = first.options.map(option => ({
       ...option,
-      description: descriptions.get(option.label) ?? option.description,
+      description: pending.descriptions.get(option.label) ?? option.description,
     }))
     return next({ ...e, props: { ...e.props, questions: [{ ...first, options }] } })
   })
@@ -266,8 +328,10 @@ export const register: Register = (on, options) => {
     sawPromptSubmit = true
     const byPerson = isPersonOrigin(e.origin)
     // 本人在回合进行中插话：这个回合也算本人的
-    if (e.turnId !== undefined && byPerson) personTurns.add(e.turnId)
-    else lastPromptByPerson = byPerson
+    if (e.turnId !== undefined && byPerson) {
+      personTurns.add(e.turnId)
+      lastPersonText = e.text
+    } else lastPromptByPerson = byPerson
     return result
   })
 
@@ -277,6 +341,7 @@ export const register: Register = (on, options) => {
     const byPerson = e.text !== '' && (sawPromptSubmit ? lastPromptByPerson : true)
     lastPromptByPerson = false
     if (byPerson) {
+      lastPersonText = e.text
       personTurns.add(e.turnId)
       if (personTurns.size > 50) personTurns.delete(personTurns.values().next().value as string)
     }
@@ -317,7 +382,7 @@ export const register: Register = (on, options) => {
         // 本人已经在输入框里打字了：不弹窗打断
         const box = await $.prompt.read().catch(() => ({ text: '' }))
         if (box.text.trim() !== '') return
-        void askInDialog($, items, autoSubmit)
+        void askInDialog($, items, autoSubmit, texts())
         return
       }
       show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })
@@ -336,13 +401,14 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
     const { Box, Text, Button } = $.ui.resolve(e)
     const isTerminal = e.surface === 'terminal'
+    const t = texts()
 
     if (view.kind === 'loading') {
       return (
         <Box flexDirection="column">
           {below}
           <Box marginTop={isTerminal || below !== null ? 1 : 0}>
-            <Text dimColor>{isTerminal ? 'next steps…' : '正在生成下一步建议…'}</Text>
+            <Text dimColor>{isTerminal ? t.terminalLoading : t.bandLoading}</Text>
           </Box>
         </Box>
       )
@@ -363,14 +429,14 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {below}
           <Box marginTop={1} />
-          <Text dimColor>next:</Text>
+          <Text dimColor>{t.terminalTitle}</Text>
           {items.map((item, index) => (
             <Box key={`s${index}`} marginLeft={2}>
               <Button key={`s${index}`} hotkey={String(index + 1)} plain label={item.label} onPress={take(item)} />
             </Box>
           ))}
           <Box marginLeft={2}>
-            <Button key="dismiss" hotkey="0" plain label="dismiss" onPress={dismiss} />
+            <Button key="dismiss" hotkey="0" plain label={t.terminalDismiss} onPress={dismiss} />
           </Box>
         </Box>
       )
@@ -383,8 +449,8 @@ export const register: Register = (on, options) => {
         {below}
         <Box flexDirection="column" marginTop={below === null ? 0 : 1} rowGap={1}>
           <Box flexDirection="row" justifyContent="space-between" alignItems="center">
-            <Text dimColor>下一步</Text>
-            <Button key="dismiss" hotkey="0" role="dismiss" dimColor label="关闭" onPress={dismiss} />
+            <Text dimColor>{t.bandTitle}</Text>
+            <Button key="dismiss" hotkey="0" role="dismiss" dimColor label={t.bandClose} onPress={dismiss} />
           </Box>
           {items.map((item, index) => (
             <Box key={`row${index}`} flexDirection="row">

@@ -6,7 +6,9 @@ import { expect, test } from 'claude-code/testing'
 import { finishTurn, stubTurns } from './turns'
 import type { On } from 'claude-code'
 
-const QUESTION = '接下来做什么？'
+// 默认语言（en）下弹窗的文字
+const QUESTION = 'What next?'
+const DISMISS = 'Not now'
 const LONG_ANSWER = '这是一段足够长的回答。'.repeat(20)
 
 type Asked = { question: string; header: string; options: { label: string; description?: string }[]; multiSelect?: boolean }
@@ -72,7 +74,7 @@ function wire(engine: TestEngine, on: On, setup: Setup): Seen {
     seen.header = questions[0]?.header ?? null
     await drawDialog(engine, questions)
     if (setup.pick === null) return Promise.resolve({ deny: 'dismissed' } as never)
-    return Promise.resolve({ result: { questions, answers: { [QUESTION]: setup.pick ?? '' } } } as never)
+    return Promise.resolve({ result: { questions, answers: { [questions[0]?.question ?? '']: setup.pick ?? '' } } } as never)
   })
   on('prompt.fill', (_$, e) => {
     seen.filled.push(e.text)
@@ -146,12 +148,12 @@ test('JSON 外有多余文字也能解析', async ($, on) => {
   expect(seen.filled).toEqual(['运行测试'])
 })
 
-test('最多三条，外加「暂不需要」', async ($, on) => {
+test('最多三条，外加「Not now」', async ($, on) => {
   const items = ['一', '二', '三', '四', '五'].map(n => ({ label: n, prompt: `第${n}条` }))
   const seen = wire($, on, { reply: json(items), pick: null })
   await finishTurn($, turn())
   await settle()
-  expect(seen.asked).toEqual(['一', '二', '三', '暂不需要'])
+  expect(seen.asked).toEqual(['一', '二', '三', DISMISS])
 })
 
 test('不存在的斜杠命令被丢弃，存在的保留', async ($, on) => {
@@ -166,7 +168,7 @@ test('不存在的斜杠命令被丢弃，存在的保留', async ($, on) => {
   })
   await finishTurn($, turn())
   await settle()
-  expect(seen.asked).toEqual(['审查', '普通', '暂不需要'])
+  expect(seen.asked).toEqual(['审查', '普通', DISMISS])
   expect(seen.filled).toEqual(['/code-review high'])
 })
 
@@ -180,7 +182,7 @@ test('终端转义序列与控制字符被清除；含 Unicode tag 字符的条�
   })
   await finishTurn($, turn())
   await settle()
-  expect(seen.asked).toEqual(['红色', '暂不需要'])
+  expect(seen.asked).toEqual(['红色', DISMISS])
   expect(seen.filled).toEqual(['运行测试'])
 })
 
@@ -194,7 +196,7 @@ test('标签重复：去重后再映射', async ($, on) => {
   })
   await finishTurn($, turn())
   await settle()
-  expect(seen.asked).toEqual(['测试', '暂不需要'])
+  expect(seen.asked).toEqual(['测试', DISMISS])
   expect(seen.filled).toEqual(['运行单元测试'])
 })
 
@@ -216,7 +218,7 @@ test('关闭弹窗：什么都不做，也不报错', async ($, on) => {
   const seen = wire($, on, { reply: json([{ label: '跑测试', prompt: '运行测试' }]), pick: null })
   await finishTurn($, turn())
   await settle()
-  expect(seen.asked).toEqual(['跑测试', '暂不需要'])
+  expect(seen.asked).toEqual(['跑测试', DISMISS])
   expect(seen.filled).toEqual([])
 })
 
@@ -238,11 +240,11 @@ test('弹窗选项的描述是完整提示', async ($, on) => {
   })
   await finishTurn($, turn())
   await settle()
-  expect(seen.header).toBe('下一步')
+  expect(seen.header).toBe('Next step')
   expect(seen.described).toEqual([
     '运行 tests/edge.test.ts 里的全部用例并报告失败原因',
     '把这次改动提交并推送到 GitHub',
-    '关闭，不做任何事',
+    'Close without doing anything',
   ])
 })
 
@@ -250,7 +252,7 @@ test('autoSubmit 打开：选中后直接按本人的话发送，不写草稿', 
   const seen = wire($, on, { reply: json([{ label: '提交', prompt: '把这次改动提交并推送' }]), pick: '提交' })
   await finishTurn($, turn())
   await settle()
-  expect(seen.header).toBe('下一步·直接发送')
+  expect(seen.header).toBe('Next · send')
   expect(seen.filled).toEqual([])
   expect(seen.submitted).toEqual([{ text: '把这次改动提交并推送', asUser: true }])
 })
@@ -262,8 +264,8 @@ test('autoSubmit 打开：Other 里输入的文字也直接发送', { options: {
   expect(seen.submitted.map(s => s.text)).toEqual(['写一份 changelog'])
 })
 
-test('autoSubmit 打开：选「暂不需要」或关闭弹窗都不发送', { options: { autoSubmit: true } }, async ($, on) => {
-  const seen = wire($, on, { reply: json([{ label: '提交', prompt: '提交' }]), pick: '暂不需要' })
+test('autoSubmit 打开：选「Not now」或关闭弹窗都不发送', { options: { autoSubmit: true } }, async ($, on) => {
+  const seen = wire($, on, { reply: json([{ label: '提交', prompt: '提交' }]), pick: DISMISS })
   await finishTurn($, turn())
   await settle()
   expect(seen.submitted).toEqual([])
@@ -288,7 +290,7 @@ test('其他来源的 AskUserQuestion 弹窗不被改动', async ($, on) => {
       requestId: 'model',
       props: {
         tool: 'AskUserQuestion',
-        questions: [{ question, header: '下一步', options: [{ label: '红', description: '' }, { label: '蓝', description: '' }], multiSelect: false }],
+        questions: [{ question, header: 'Next step', options: [{ label: '红', description: '' }, { label: '蓝', description: '' }], multiSelect: false }],
       },
     })
     expect(seen.described).toEqual(['', ''])
@@ -306,7 +308,7 @@ for (const notice of [
       const seen = wire($, on, { reply: json([{ label: '跑测试', prompt: '运行测试' }]), pick: notice })
       await finishTurn($, turn())
       await settle()
-      expect(seen.asked).toEqual(['跑测试', '暂不需要'])
+      expect(seen.asked).toEqual(['跑测试', DISMISS])
       expect(seen.filled).toEqual([])
       expect(seen.submitted).toEqual([])
     })

@@ -10,7 +10,7 @@
 
 **prompt-compass** suggests up to three likely next prompts after each Claude Code turn, in both the terminal and the Code tab of the Claude desktop app.
 
-By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. Nothing is ever sent unless you pick an option yourself with `autoSubmit` turned on.
+By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "Not now" or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. The dialog and buttons are in English by default; set `language` to `zh` for Chinese, or `auto` to follow the language of your latest message. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. Nothing is ever sent unless you pick an option yourself with `autoSubmit` turned on.
 
 When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once.
 
@@ -23,7 +23,7 @@ How it works: when a turn ends, the plugin forks the current session with `$.mod
 3. **Where the data goes and what it costs.** To get suggestions the plugin calls `$.model.fork`, which re-sends the session's own transcript as the main thread last sent it, plus one short instruction, over Claude Code's existing model connection. Nothing goes anywhere the session does not already send it. Each suggestion round is one extra tool-less model request, usually served from the prompt cache, and it counts toward your usage. The plugin stores nothing on disk and keeps no history between sessions.
 4. **Where it works.** Only in Claude Code: the terminal and the Code tab of the Claude desktop app. It is built on Claude Code's function-hooks plugin API, so it has no effect in claude.ai chat or Cowork. The `band` mode needs the area above the prompt box, which the VS Code extension and the mobile app do not have yet.
 
-Options: `display` (`dialog` or `band`), `autoSubmit` (default false), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
+Options: `display` (`dialog` or `band`), `autoSubmit` (default false), `language` (`en` default, `zh`, or `auto`), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
 
 Based on the MIT-licensed `next-steps` plugin by Thariq Shihipar in anthropics/claude-plugins-community.
 
@@ -67,14 +67,26 @@ claude plugin disable next-steps@claude-community
 
 ### 弹窗模式（默认，`display: dialog`）
 
-回答结束后弹出「下一步」问答框：
+回答结束后弹出问答框（以下用中文界面举例；默认是英文，见下方「界面语言」）：
 
-- 列出最多三条建议，外加「暂不需要」；每个选项的描述是它的完整提示，选之前就能看到全部文字。弹窗自带的「Other」可以自己输入。
+- 列出最多三条建议，外加「暂不需要」（英文为 Not now）；每个选项的描述是它的完整提示，选之前就能看到全部文字。弹窗自带的「Other」可以自己输入。
 - 选中一条：默认把完整提示作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
-- 打开 `autoSubmit` 后，选中即直接发送（弹窗标题变为「下一步·直接发送」以示区别）。
+- 打开 `autoSubmit` 后，选中即直接发送（弹窗标题变为「下一步·直接发送」，英文为 Next · send，以示区别）。
 - 在「Other」里输入的文字同样处理；选「暂不需要」或关闭弹窗则什么都不做。
 - 弹窗模式不在输入框上方画任何东西，生成建议期间也不显示加载提示。
 - 注意：弹窗会占用键盘直到你作答或关闭；嫌打扰可以改用按钮行，或调高 `minAnswerChars`。
+
+### 界面语言（`language`）
+
+弹窗的问题、标题、关闭选项，以及按钮行的标题、关闭按钮和加载提示，都按 `language` 选项显示：
+
+| 值 | 效果 |
+| --- | --- |
+| `en`（默认） | 英文：What next? / Next step / Not now |
+| `zh` | 中文：接下来做什么？ / 下一步 / 暂不需要 |
+| `auto` | 跟随你最近一条消息的语言：汉字数量达到拉丁字母的三分之一（且至少 2 个）就用中文，否则英文。中文消息里夹带的英文文件名、命令名不会让它误判成英文 |
+
+建议本身的内容由模型按你的说话方式生成，不受这个选项影响。
 
 ### 按钮行模式（`display: band`）
 
@@ -122,6 +134,7 @@ next:
 | --- | --- | --- |
 | `display` | `dialog` | `dialog`：问答弹窗；`band`：输入框上方的按钮行 |
 | `autoSubmit` | `false` | 仅弹窗模式：选中后直接发送，而不是写入输入框 |
+| `language` | `en` | 界面语言：`en` 英文、`zh` 中文、`auto` 跟随你最近一条消息 |
 | `minAnswerChars` | `80` | 回答短于该字符数时不给建议 |
 | `suggestSkills` | `true` | 是否把会话可用的 skill 与斜杠命令告诉建议生成器 |
 
@@ -137,7 +150,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重；弹窗选项的描述为完整提示、其他来源的弹窗不被改动；autoSubmit 打开时直接按本人的话发送、关闭时只写草稿；何时弹窗：只在你发起的回合之后，自动开启的回合、子代理回合、正在打字、弹窗已开、同一回合重复时都不弹。
+测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重；弹窗选项的描述为完整提示、其他来源的弹窗不被改动；autoSubmit 打开时直接按本人的话发送、关闭时只写草稿；何时弹窗：只在你发起的回合之后，自动开启的回合、子代理回合、正在打字、弹窗已开、同一回合重复时都不弹；界面语言：默认英文、zh 中文、auto 按最近一条消息判断（含中英混合消息）、非法值回退英文，弹窗与按钮行在两种语言下的全部文字。
 
 ## 许可
 
