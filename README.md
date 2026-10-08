@@ -10,11 +10,11 @@
 
 **prompt-compass** suggests up to three likely next prompts after each Claude Code turn, in both the terminal and the Code tab of the Claude desktop app.
 
-By default the suggestions appear in Claude Code's built-in question dialog. Pick one and its full prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
+By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
 
 How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
 
-Options: `display` (`dialog` or `band`), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
+Options: `display` (`dialog` or `band`), `autoSubmit` (default false), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
 
 Based on the MIT-licensed `next-steps` plugin by Thariq Shihipar in anthropics/claude-plugins-community.
 
@@ -51,9 +51,10 @@ claude plugin disable next-steps@claude-community
 
 回答结束后弹出「下一步」问答框：
 
-- 列出最多三条建议，外加「暂不需要」；弹窗自带的「Other」可以自己输入。
-- 选中一条：它的完整提示作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
-- 在「Other」里输入的文字同样写入输入框；选「暂不需要」或关闭弹窗则什么都不做。
+- 列出最多三条建议，外加「暂不需要」；每个选项的描述是它的完整提示，选之前就能看到全部文字。弹窗自带的「Other」可以自己输入。
+- 选中一条：默认把完整提示作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
+- 打开 `autoSubmit` 后，选中即直接发送（弹窗标题变为「下一步·直接发送」以示区别）。
+- 在「Other」里输入的文字同样处理；选「暂不需要」或关闭弹窗则什么都不做。
 - 注意：弹窗会占用键盘直到你作答或关闭；嫌打扰可以改用按钮行，或调高 `minAnswerChars`。
 
 ### 按钮行模式（`display: band`）
@@ -73,7 +74,7 @@ next:
 - 点击建议（或按 `1`、`2`、`3`），该建议作为草稿写入输入框；`0` 或关闭按钮收起建议。
 - 第一条建议同时作为输入框的灰色提示，按 `Tab` 直接采用。
 
-**两种模式都不会自动发送任何提示。**
+**默认不会自动发送任何提示。** 只有在弹窗模式下打开 `autoSubmit`，并且你在弹窗里亲自选中一条时才会发送；按钮行模式只显示短标签、看不到完整提示，因此始终只写草稿。
 
 ## 工作原理
 
@@ -81,7 +82,7 @@ next:
 
 - `turn.complete`：用 `$.model.fork` 分叉当前会话，请模型预测接下来最可能的提示。分叉共享会话的提示缓存，成本约等于一条简短回复。
 - `$.command.list`：把会话中可用的 skill 与斜杠命令交给分叉，所以建议可以是 `/skill 参数`；不存在的命令会被丢弃。
-- 弹窗模式：`$.ui.ask` 打开引擎自带的 AskUserQuestion 弹窗，选中后调用 `$.prompt.fill`。
+- 弹窗模式：`$.ui.ask` 打开引擎自带的 AskUserQuestion 弹窗；`ui.render`（`AskUserQuestion`）钩子在绘制本插件自己的那个弹窗时给选项补上描述（完整提示），其他弹窗原样放行。选中后调用 `$.prompt.fill`，或在 `autoSubmit` 打开时调用 `$.prompt.submit`。
 - 按钮行模式：`ui.render`（`AbovePrompt`）按 `e.surface` 分支绘制：终端为纯文本热键行，桌面为原生按钮列表；选中时调用 `$.prompt.fill`，第一条建议同时交给 `$.prompt.suggest`。
 - `turn.start`：新一轮开始时隐藏建议。
 - 模型输出视为不可信文本：显示前会清除终端转义序列、控制字符、不可见字符等。
@@ -93,6 +94,7 @@ next:
 | 选项 | 默认值 | 作用 |
 | --- | --- | --- |
 | `display` | `dialog` | `dialog`：问答弹窗；`band`：输入框上方的按钮行 |
+| `autoSubmit` | `false` | 仅弹窗模式：选中后直接发送，而不是写入输入框 |
 | `minAnswerChars` | `80` | 回答短于该字符数时不给建议 |
 | `suggestSkills` | `true` | 是否把会话可用的 skill 与斜杠命令告诉建议生成器 |
 
@@ -108,7 +110,7 @@ claude plugin validate .
 claude plugin test .
 ```
 
-测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重。
+测试覆盖：按钮行模式在终端与桌面两种界面的显示、点击与收起；弹窗模式的选项、选中、Other 输入与关闭；以及边界情况：短回答或中断的回合不给建议、模型输出非 JSON 或为空、超过三条截断、不存在的斜杠命令被丢弃、终端转义与控制字符清除、标签去重；弹窗选项的描述为完整提示、其他来源的弹窗不被改动；autoSubmit 打开时直接按本人的话发送、关闭时只写草稿。
 
 ## 许可
 

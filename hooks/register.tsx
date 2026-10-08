@@ -149,26 +149,51 @@ function show($: EngineInterface, nextView: View): void {
   $.ui.invalidate('ui.render')
 }
 
+const DIALOG_QUESTION = '接下来做什么？'
+const DIALOG_HEADER = '下一步'
+const DIALOG_HEADER_SEND = '下一步·直接发送'
 const DIALOG_DISMISS = '暂不需要'
 
-// 用引擎自带的 AskUserQuestion 弹窗列出建议：选中一条，把它的完整提示写进输入框
-// 作为草稿；在「Other」里输入的文字同样写进输入框；关闭弹窗或选「暂不需要」则什么都不做。
-// 弹窗的选项只是标签，所以标签去重后再映射回完整提示。
-async function askInDialog($: EngineInterface, items: readonly Suggestion[]): Promise<void> {
+// 弹窗正在问的建议：标签到完整提示。$.ui.ask 只收标签，所以由本插件的
+// ui.render（AskUserQuestion）钩子按这张表在绘制时给每个选项补上描述。
+let pendingDescriptions: ReadonlyMap<string, string> | null = null
+
+type AskedQuestion = {
+  question: string
+  header: string
+  options: { label: string; description?: string }[]
+}
+
+// 用引擎自带的 AskUserQuestion 弹窗列出建议，每个选项的描述是它的完整提示，
+// 所以选之前能看到将要写入或发送的全部文字。选中一条：autoSubmit 关闭时写进输入框
+// 作为草稿，打开时直接发送；在「Other」里输入的文字同样处理；关闭弹窗或选
+// 「暂不需要」则什么都不做。弹窗按标签作答，所以标签去重后再映射回完整提示。
+async function askInDialog($: EngineInterface, items: readonly Suggestion[], autoSubmit: boolean): Promise<void> {
   const byLabel = new Map<string, string>()
   for (const item of items) {
     if (item.label !== DIALOG_DISMISS && !byLabel.has(item.label)) byLabel.set(item.label, item.prompt)
   }
   if (byLabel.size === 0) return
   let answer: string
+  pendingDescriptions = new Map([...byLabel, [DIALOG_DISMISS, '关闭，不做任何事']])
   try {
-    answer = await $.ui.ask('接下来做什么？', { header: '下一步', options: [...byLabel.keys(), DIALOG_DISMISS] })
+    answer = await $.ui.ask(DIALOG_QUESTION, {
+      header: autoSubmit ? DIALOG_HEADER_SEND : DIALOG_HEADER,
+      options: [...byLabel.keys(), DIALOG_DISMISS],
+    })
   } catch {
     return // 弹窗被关闭，或无人可问
+  } finally {
+    pendingDescriptions = null
   }
   if (answer === DIALOG_DISMISS) return
   const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
   if (text === '') return
+  if (autoSubmit) {
+    // 这段文字是本人在弹窗里看过完整内容后选的，按本人的话发送，不加插件来源的框架。
+    await $.prompt.submit({ text, asUser: true }).catch(error => $.ui.toast(`could not send: ${String(error)}`))
+    return
+  }
   const r = await $.prompt.fill({ text }).catch(() => ({ isFilled: false }))
   if (!r.isFilled) $.ui.toast('could not fill the prompt box')
 }
@@ -178,6 +203,30 @@ export const register: Register = (on, options) => {
   const suggestsSkills = options?.suggestSkills !== false
   // dialog：用引擎自带的 AskUserQuestion 弹窗；band：画在输入框上方
   const usesDialog = options?.display !== 'band'
+  // 仅弹窗模式生效：按钮行只显示短标签，看不到完整提示，所以那里始终只写草稿
+  const autoSubmit = options?.autoSubmit === true
+
+  // 只改本插件自己的提问：正有一组建议在等待作答、且问题与标题都对得上时，
+  // 在绘制弹窗前给每个选项补上描述（完整提示）。这只改变显示，作答仍按标签；
+  // 模型自己的 AskUserQuestion 弹窗原样放行。
+  on('ui.render', { component: 'AskUserQuestion' }, async ($, e, next): Promise<RenderElement> => {
+    const descriptions = pendingDescriptions
+    const [first, ...rest] = e.props.questions as AskedQuestion[]
+    if (
+      descriptions === null ||
+      first === undefined ||
+      rest.length > 0 ||
+      first.question !== DIALOG_QUESTION ||
+      (first.header !== DIALOG_HEADER && first.header !== DIALOG_HEADER_SEND)
+    ) {
+      return next(e)
+    }
+    const options = first.options.map(option => ({
+      ...option,
+      description: descriptions.get(option.label) ?? option.description,
+    }))
+    return next({ ...e, props: { ...e.props, questions: [{ ...first, options }] } })
+  })
 
   // A new turn (typed or otherwise) hides whatever was offered.
   on('turn.start', async ($, e, next) => {
@@ -207,7 +256,7 @@ export const register: Register = (on, options) => {
       if (view.kind !== 'loading' || view.turnId !== turnId) return
       if (usesDialog) {
         show($, { kind: 'hidden' })
-        if (items.length > 0) void askInDialog($, items)
+        if (items.length > 0) void askInDialog($, items, autoSubmit)
         return
       }
       show($, items.length === 0 ? { kind: 'hidden' } : { kind: 'offer', items })

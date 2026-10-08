@@ -1,6 +1,6 @@
 {
   "name": "prompt-compass",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "每轮结束后给出最多三条下一步建议：默认用 Claude Code 自带的问答弹窗，也可改为输入框上方的按钮行；终端与桌面 App 均可用。",
   "author": {
     "name": "SorcererAres"
@@ -28,6 +28,13 @@
         "band"
       ],
       "default": "dialog"
+    },
+    "autoSubmit": {
+      "type": "boolean",
+      "title": "Send the chosen suggestion right away",
+      "description": "Dialog mode only. Off: the chosen suggestion is written into the prompt box as a draft. On: it is sent at once. The dialog always shows each suggestion's full prompt.",
+      "required": false,
+      "default": false
     },
     "minAnswerChars": {
       "type": "number",
