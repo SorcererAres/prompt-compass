@@ -158,6 +158,10 @@ const DIALOG_DISMISS = '暂不需要'
 // ui.render（AskUserQuestion）钩子按这张表在绘制时给每个选项补上描述。
 let pendingDescriptions: ReadonlyMap<string, string> | null = null
 
+// 防止重复弹窗：弹窗开着时不再叠一个；同一回合只处理一次。
+let isDialogOpen = false
+let lastHandledTurnId: string | null = null
+
 type AskedQuestion = {
   question: string
   header: string
@@ -174,7 +178,9 @@ async function askInDialog($: EngineInterface, items: readonly Suggestion[], aut
     if (item.label !== DIALOG_DISMISS && !byLabel.has(item.label)) byLabel.set(item.label, item.prompt)
   }
   if (byLabel.size === 0) return
+  if (isDialogOpen) return
   let answer: string
+  isDialogOpen = true
   pendingDescriptions = new Map([...byLabel, [DIALOG_DISMISS, '关闭，不做任何事']])
   try {
     answer = await $.ui.ask(DIALOG_QUESTION, {
@@ -185,6 +191,7 @@ async function askInDialog($: EngineInterface, items: readonly Suggestion[], aut
     return // 弹窗被关闭，或无人可问
   } finally {
     pendingDescriptions = null
+    isDialogOpen = false
   }
   if (answer === DIALOG_DISMISS) return
   const text = byLabel.get(answer) ?? clean(answer, PROMPT_MAX)
@@ -237,8 +244,14 @@ export const register: Register = (on, options) => {
   // Turn over: ask the fork, detached, so the turn's completion never waits on it.
   on('turn.complete', async ($, e, next) => {
     const result = await next(e)
+    // 子代理的回合也会触发 turn.complete（带 agentId），只为主对话的回合给建议
+    if (e.agentId !== undefined) return result
     if (e.reason !== 'answer' || e.answer.trim().length < minTurnChars) return result
     const turnId = e.turnId
+    // 同一回合只处理一次；弹窗还开着时不再为新回合生成建议
+    if (turnId === lastHandledTurnId) return result
+    if (usesDialog && isDialogOpen) return result
+    lastHandledTurnId = turnId
     show($, { kind: 'loading', turnId })
     void (async () => {
       let items: Suggestion[] = []
