@@ -10,11 +10,18 @@
 
 **prompt-compass** suggests up to three likely next prompts after each Claude Code turn, in both the terminal and the Code tab of the Claude desktop app.
 
-By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
+By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. Nothing is ever sent unless you pick an option yourself with `autoSubmit` turned on.
 
 When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once.
 
 How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
+
+### What it runs, sends and changes
+
+1. **Sending prompts (`autoSubmit`, off by default).** With `autoSubmit` off, the plugin only writes a draft into the prompt box and never sends anything. With it on, the plugin sends a prompt only after you pick that option in the dialog, where its full text is shown; it is sent as your own words (`$.prompt.submit` with `asUser: true`, so Claude does not see a "sent by a plugin" frame, though the transcript still records the plugin as its origin). Text you type under "Other" is sent the same way. Closing the dialog sends nothing, including when Claude Code reports the close as a text notice such as "[User dismissed …]": the plugin recognizes those notices and ignores them. In `band` mode it never sends, because the buttons show only short labels.
+2. **Changing how a dialog is drawn.** A `ui.render` hook on `AskUserQuestion` adds descriptions (the full prompts) to the options of the plugin's own dialog, identified by its question and header while a set of suggestions is waiting for an answer. Every other `AskUserQuestion` dialog, including Claude's own questions to you, is drawn unchanged. Answers are still matched by label, so this changes only what is shown.
+3. **Where the data goes and what it costs.** To get suggestions the plugin calls `$.model.fork`, which re-sends the session's own transcript as the main thread last sent it, plus one short instruction, over Claude Code's existing model connection. Nothing goes anywhere the session does not already send it. Each suggestion round is one extra tool-less model request, usually served from the prompt cache, and it counts toward your usage. The plugin stores nothing on disk and keeps no history between sessions.
+4. **Where it works.** Only in Claude Code: the terminal and the Code tab of the Claude desktop app. It is built on Claude Code's function-hooks plugin API, so it has no effect in claude.ai chat or Cowork. The `band` mode needs the area above the prompt box, which the VS Code extension and the mobile app do not have yet.
 
 Options: `display` (`dialog` or `band`), `autoSubmit` (default false), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
 
@@ -101,6 +108,13 @@ next:
 - 模型输出视为不可信文本：显示前会清除终端转义序列、控制字符、不可见字符等。
 
 按钮行模式依赖输入框上方的区域，VS Code 扩展与手机 App 目前没有这块区域，因此不显示。
+
+## 行为与数据披露
+
+1. **发送提示（`autoSubmit`，默认关闭）**：关闭时插件只把草稿写进输入框，从不发送。打开后，只有你在弹窗里亲自选中某一条（选之前能看到完整文字），插件才发送；以你本人的话发送（`$.prompt.submit` 带 `asUser: true`，Claude 不会看到「由插件发送」的框架，但会话记录里仍标明来源是插件）。在「Other」里输入的文字同样处理。关闭弹窗不会发送任何东西：即使 Claude Code 把关闭报告成「[User dismissed …]」这类文字，插件也会识别并忽略。按钮行模式只显示短标签，所以从不发送。
+2. **改变弹窗的绘制**：`ui.render`（`AskUserQuestion`）钩子只在本插件自己的弹窗（问题与标题对得上、且有一组建议在等待作答时）给选项补上描述（完整提示）。其他所有 AskUserQuestion 弹窗，包括 Claude 自己向你提的问题，都原样绘制。作答仍按标签匹配，只改显示。
+3. **数据去向与成本**：生成建议时调用 `$.model.fork`，把会话自己的对话记录（按主线程上次发送的样子）加一条简短指令，通过 Claude Code 现有的模型连接再发一次。数据不会去到会话本来不发往的任何地方。每轮建议多一次不带工具的模型请求，通常命中提示缓存，计入你的用量。插件不在磁盘上存任何东西，也不跨会话保留记录。
+4. **适用范围**：只在 Claude Code 中生效（终端，以及 Claude 桌面 App 的 Code tab）。它基于 Claude Code 的函数钩子插件接口，在 claude.ai 聊天和 Cowork 中不起作用。按钮行模式需要输入框上方的区域，VS Code 扩展与手机 App 目前没有。
 
 ## 选项
 
