@@ -1,4 +1,4 @@
-# next-steps-app
+# prompt-compass
 
 每轮对话结束后给出最多三条「下一步」建议。**终端和 Claude 桌面 App 的 Code tab 都能用。**
 
@@ -6,23 +6,35 @@
 
 基于 [anthropics/claude-plugins-community](https://github.com/anthropics/claude-plugins-community/tree/main/next-steps) 中 Thariq Shihipar 的 `next-steps` 插件改写。原版只在终端绘制，本版本按界面分支渲染，让桌面 App 也能显示。
 
+## English
+
+**prompt-compass** suggests up to three likely next prompts after each Claude Code turn, in both the terminal and the Code tab of the Claude desktop app.
+
+By default the suggestions appear in Claude Code's built-in question dialog. Pick one and its full prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
+
+How it works: when a turn ends, the plugin forks the current session with `$.model.fork` (sharing the prompt cache, so it costs about one short reply) and asks the model for likely next prompts. The session's skill and slash-command names are included so a suggestion can be `/skill arguments`; a suggestion naming a command the session does not have is dropped. Model output is treated as untrusted: escape sequences, control and invisible characters are stripped before anything is shown. The plugin makes no network requests of its own and runs no shell commands.
+
+Options: `display` (`dialog` or `band`), `minAnswerChars` (skip suggestions after shorter answers, default 80), `suggestSkills` (default true).
+
+Based on the MIT-licensed `next-steps` plugin by Thariq Shihipar in anthropics/claude-plugins-community.
+
 ## 安装
 
 在 Claude Code 中：
 
 ```
-/plugin marketplace add SorcererAres/next-steps-app
-/plugin install next-steps-app@next-steps-app
+/plugin marketplace add SorcererAres/prompt-compass
+/plugin install prompt-compass@prompt-compass
 ```
 
 或在命令行：
 
 ```bash
-claude plugin marketplace add SorcererAres/next-steps-app
+claude plugin marketplace add SorcererAres/prompt-compass
 ```
 
 ```bash
-claude plugin install next-steps-app@next-steps-app
+claude plugin install prompt-compass@prompt-compass
 ```
 
 如果同时装了原版 `next-steps`，建议先停用它，避免终端里出现两份建议：
@@ -84,7 +96,7 @@ next:
 | `minAnswerChars` | `80` | 回答短于该字符数时不给建议 |
 | `suggestSkills` | `true` | 是否把会话可用的 skill 与斜杠命令告诉建议生成器 |
 
-修改：`/plugin configure next-steps-app@next-steps-app`
+修改：`/plugin configure prompt-compass@prompt-compass`
 
 ## 开发
 

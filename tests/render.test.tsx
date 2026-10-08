@@ -35,7 +35,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await settle()
 
     const ui = await $.ui.mount({
-      plugin: 'next-steps-app',
+      plugin: 'prompt-compass',
       surface,
       component: 'AbovePrompt',
       props: { hasSurvey: false, isWorking: false, maxRows: 20 } as never,

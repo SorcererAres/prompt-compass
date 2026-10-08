@@ -1,12 +1,12 @@
 {
-  "name": "next-steps-app",
+  "name": "prompt-compass",
   "owner": {
     "name": "SorcererAres"
   },
-  "description": "next-steps 的桌面 App 适配版：终端与 Claude 桌面 App 均可显示下一步建议。",
+  "description": "prompt-compass：每轮结束后给出最多三条下一步建议，终端与 Claude 桌面 App 均可用。",
   "plugins": [
     {
-      "name": "next-steps-app",
+      "name": "prompt-compass",
       "source": "./",
       "description": "每轮结束后在输入框上方给出最多三条下一步建议，终端与 Claude 桌面 App 的 Code tab 都能用。",
       "category": "productivity"

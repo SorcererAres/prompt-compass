@@ -1,7 +1,7 @@
 /* @jsxRuntime classic */
 /* @jsx h */
 /* @jsxFrag Fragment */
-// next-steps-app（next-steps 的桌面 App 适配版，渲染层按 e.surface 分支）。
+// prompt-compass：基于 next-steps 改写，默认用引擎自带的问答弹窗给出建议，也可画在输入框上方（渲染层按 e.surface 分支）。
 // 原说明：
 // next-steps: when a turn ends, fork the session (shares the prompt cache, so
 // it has full context for the price of one short reply) and ask for up to
