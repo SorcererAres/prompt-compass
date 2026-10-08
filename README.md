@@ -10,7 +10,7 @@
 
 **prompt-compass** suggests up to three likely next prompts after each Claude Code turn, in both the terminal and the Code tab of the Claude desktop app.
 
-By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
+By default the suggestions appear in Claude Code's built-in question dialog, each option showing its full prompt as the description. Pick one and that prompt is written into the prompt box as an editable draft; text typed under "Other" is written there too, and "暂不需要" (not now) or closing the dialog does nothing. Turn on `autoSubmit` to send the chosen prompt right away instead (dialog mode only, since only the dialog shows the full text). In dialog mode nothing is drawn above the prompt box, not even a loading hint. Set the `display` option to `band` to show the suggestions as a row of buttons above the prompt box instead. The plugin never submits a prompt on its own.
 
 When it appears: only after you send a message (typed in the prompt box, or from a remote client) and Claude finishes answering it. Turns that start on their own, such as background-task notifications, scheduled tasks, messages from other sessions or automatic continuations, never trigger it, nor do subagent turns. It never opens while you are already typing, never stacks a second dialog on an open one, and handles each turn at most once.
 
@@ -66,6 +66,7 @@ claude plugin disable next-steps@claude-community
 - 选中一条：默认把完整提示作为草稿写入输入框，你可以编辑后自己按 Enter 发送。
 - 打开 `autoSubmit` 后，选中即直接发送（弹窗标题变为「下一步·直接发送」以示区别）。
 - 在「Other」里输入的文字同样处理；选「暂不需要」或关闭弹窗则什么都不做。
+- 弹窗模式不在输入框上方画任何东西，生成建议期间也不显示加载提示。
 - 注意：弹窗会占用键盘直到你作答或关闭；嫌打扰可以改用按钮行，或调高 `minAnswerChars`。
 
 ### 按钮行模式（`display: band`）

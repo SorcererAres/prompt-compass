@@ -82,3 +82,34 @@ for (const answer of [
     expect(filled).toEqual(answer.filled)
   })
 }
+
+// 生成建议期间（fork 尚未返回）输入框上方区域画什么
+for (const surface of ['terminal', 'desktop'] as const) {
+  for (const display of ['dialog', 'band'] as const) {
+    test(`${surface}：${display} 模式生成期间${display === 'dialog' ? '不在' : '在'}输入框上方显示加载提示`, { options: { display } }, async ($, on) => {
+      on('turn.complete', () => Promise.resolve({ text: '' }))
+      stubTurns(on)
+      on('command.list', () => Promise.resolve({ value: [] }))
+      // fork 一直不返回，停在「正在生成」
+      on('model.fork', () => new Promise(() => undefined))
+      on('ui.render', async ($, e) => {
+        const { Box } = $.ui.resolve(e)
+        return <Box key="engine" />
+      })
+
+      await finishTurn($, { answer: '这是一段足够长的回答。'.repeat(20), durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+      await settle()
+
+      const ui = await $.ui.mount({
+        plugin: 'prompt-compass',
+        surface,
+        component: 'AbovePrompt',
+        props: { hasSurvey: false, isWorking: false, maxRows: 20 } as never,
+      })
+      const loading = await ui.find({ type: 'Text', text: /next steps…|正在生成下一步建议/ })
+      if (display === 'dialog') expect(loading).toBeUndefined()
+      else expect(loading).toBeDefined()
+      await ui.unmount()
+    })
+  }
+}

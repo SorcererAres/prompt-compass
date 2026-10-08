@@ -320,6 +320,8 @@ export const register: Register = (on, options) => {
   // 关闭用桌面自带的关闭控件（role="dismiss"）；数字热键在面板获得焦点时仍可用。
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next): Promise<RenderElement> => {
     const below = await next(e)
+    // 弹窗模式：建议只在弹窗里出现，输入框上方什么都不画（包括「正在生成」的提示）
+    if (usesDialog) return below
     if (e.props.hasSurvey || e.props.isWorking || view.kind === 'hidden') return below
     const { Box, Text, Button } = $.ui.resolve(e)
     const isTerminal = e.surface === 'terminal'
